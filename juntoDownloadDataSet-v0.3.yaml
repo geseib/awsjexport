@@ -1,0 +1,113 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Junto Download DataSet Revision"
+
+Parameters:
+  # Replace endpoint with either Gamma or Preview endpoint name
+  apiEndpoint:
+    Type: String
+    Description: the api endpoint for the deployment
+    Default: "jcs-gamma.us-east-1.datax.aws.a2z.com"
+
+  # Replace with Dataset ARN that is in a Product subscribed to
+  DatasetARN:
+    Type: String
+    Description: the ARN for the Dataset
+    Default: "arn:aws:junto:us-east-1::DataSet/ef280663b3f36d41f3874e0e2d527b1e"
+
+Resources:
+  #
+  #Data S3 Bucket
+  DataS3Bucket:
+    DeletionPolicy: Retain
+    Type: AWS::S3::Bucket
+    Properties: {}
+
+  # Lambda functions
+  FunctionGetNewRevision:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        S3Bucket: seibjuntocode
+        S3Key: index.zip
+      Handler: "index.lambda_handler"
+      Environment:
+        Variables:
+          API_ENDPOINT: !Ref apiEndpoint
+          API_REGION: !Ref AWS::Region
+          S3_BUCKET: !Ref DataS3Bucket
+      Role: !GetAtt "RoleGetNewRevision.Arn"
+      Runtime: "python3.6"
+
+  #IAM Roles for Lambda
+  RoleGetNewRevision:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Policies:
+        - PolicyName: Junto
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "junto:*"
+                Resource: "*"
+        - PolicyName: S3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - !Join ["", [!GetAtt DataS3Bucket.Arn, "/"]]
+                  - !Join ["", [!GetAtt DataS3Bucket.Arn, "/*"]]
+        - PolicyName: JuntoS3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                Resource:
+                  - "arn:aws:s3:::junto*"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+  #Cloudwatch Event Rule S3 Dataset bucket put object to Trigger Step Function
+  NewRevisionEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "New Revision Event"
+      EventPattern:
+        source:
+          - "aws.junto"
+        detail-type:
+          - "Revision Published To Data Set"
+        resources:
+          - !Ref DatasetARN
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt
+            - FunctionGetNewRevision
+            - Arn
+          Id: "TargetStepFunctionV1"
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - FunctionGetNewRevision
+        - Arn
+      Action: "lambda:InvokeFunction"
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt
+        - NewRevisionEventRule
+        - Arn
