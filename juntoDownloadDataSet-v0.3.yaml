@@ -4,16 +4,17 @@ Description: "Junto Download DataSet Revision"
 
 Parameters:
   # Replace endpoint with either Gamma or Preview endpoint name
-  apiEndpoint:
-    Type: String
-    Description: the api endpoint for the deployment
-    Default: "jcs-gamma.us-east-1.datax.aws.a2z.com"
 
   # Replace with Dataset ARN that is in a Product subscribed to
-  DatasetARN:
+  datasetARN:
     Type: String
     Description: the ARN for the Dataset
     Default: "arn:aws:junto:us-east-1::DataSet/ef280663b3f36d41f3874e0e2d527b1e"
+
+  codeBucket:
+    Type: String
+    Description: the s3 Bucket where lambda index.zip resides 
+    Default: "seibjuntocode"
 
 Resources:
   #
@@ -28,13 +29,11 @@ Resources:
     Type: "AWS::Lambda::Function"
     Properties:
       Code:
-        S3Bucket: seibjuntocode
+        S3Bucket: !Ref codeBucket
         S3Key: index.zip
       Handler: "index.lambda_handler"
       Environment:
         Variables:
-          API_ENDPOINT: !Ref apiEndpoint
-          API_REGION: !Ref AWS::Region
           S3_BUCKET: !Ref DataS3Bucket
       Role: !GetAtt "RoleGetNewRevision.Arn"
       Runtime: "python3.6"
@@ -92,7 +91,7 @@ Resources:
         detail-type:
           - "Revision Published To Data Set"
         resources:
-          - !Ref DatasetARN
+          - !Ref datasetARN
       State: "ENABLED"
       Targets:
         - Arn: !GetAtt
